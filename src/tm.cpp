@@ -23,12 +23,13 @@
 #endif
 
 // External headers
+#include <iostream>
 
 // Internal headers
-#include <tm.hpp>
+#include "shared-memory.hpp"
+#include "tm.hpp"
 
 // -------------------------------------------------------------------------- //
-
 /** Define a proposition as likely true.
  * @param prop Proposition
  **/
@@ -60,36 +61,40 @@
 #warning This compiler has no support for GCC attributes
 #endif
 
-// -------------------------------------------------------------------------- //
+shared_t opaque(SharedMemory* mem) { return reinterpret_cast<shared_t>(mem); }
+tx_t opaque(Transaction* tx) { return reinterpret_cast<tx_t>(tx); }
 
-/** Create (i.e. allocate + init) a new shared memory region, with one first
- *non-free-able allocated segment of the requested size and alignment.
- * @param size  Size of the first shared segment of memory to allocate (in
- *bytes), must be a positive multiple of the alignment
- * @param align Alignment (in bytes, must be a power of 2) that the shared
- *memory region must support
+SharedMemory* transparent(shared_t shared) {
+  return reinterpret_cast<SharedMemory*>(shared);
+}
+Transaction* transparent(tx_t tx) { return reinterpret_cast<Transaction*>(tx); }
+
+// -------------------------------------------------------------------------- //
+/** Create (i.e. allocate + init) a new shared memory region, with one
+ * first non-free-able allocated segment of the requested size and
+ * alignment.
+ * @param size  Size of the first shared segment of memory to allocate
+ *  (in bytes), must be a positive multiple of the alignment
+ * @param align Alignment (in bytes, must be a power of 2) that the
+ *  shared memory region must support
  * @return Opaque shared memory region handle, 'invalid_shared' on failure
  **/
-shared_t tm_create(size_t size as(unused), size_t align as(unused)) noexcept {
-  // TODO: tm_create(size_t, size_t)
-  return invalid_shared;
+shared_t tm_create(size_t size, size_t align) noexcept {
+  return opaque(new SharedMemory(size, align));
 }
 
 /** Destroy (i.e. clean-up + free) a given shared memory region.
  * @param shared Shared memory region to destroy, with no running transaction
  **/
-void tm_destroy(shared_t shared as(unused)) noexcept {
-  // TODO: tm_destroy(shared_t)
-}
+void tm_destroy(shared_t shared) noexcept { delete transparent(shared); }
 
 /** [thread-safe] Return the start address of the first allocated segment in the
  *shared memory region.
  * @param shared Shared memory region to query
  * @return Start address of the first allocated segment
  **/
-void* tm_start(shared_t shared as(unused)) noexcept {
-  // TODO: tm_start(shared_t)
-  return nullptr;
+void* tm_start(shared_t shared) noexcept {
+  return reinterpret_cast<void*>(transparent(shared)->start_addr());
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of
@@ -97,19 +102,15 @@ void* tm_start(shared_t shared as(unused)) noexcept {
  * @param shared Shared memory region to query
  * @return First allocated segment size
  **/
-size_t tm_size(shared_t shared as(unused)) noexcept {
-  // TODO: tm_size(shared_t)
-  return 0;
-}
+size_t tm_size(shared_t shared) noexcept { return transparent(shared)->size(); }
 
 /** [thread-safe] Return the alignment (in bytes) of the memory accesses on the
  *given shared memory region.
  * @param shared Shared memory region to query
  * @return Alignment used globally
  **/
-size_t tm_align(shared_t shared as(unused)) noexcept {
-  // TODO: tm_align(shared_t)
-  return 0;
+size_t tm_align(shared_t shared) noexcept {
+  return transparent(shared)->alignment();
 }
 
 /** [thread-safe] Begin a new transaction on the given shared memory region.
@@ -117,9 +118,8 @@ size_t tm_align(shared_t shared as(unused)) noexcept {
  * @param is_ro  Whether the transaction is read-only
  * @return Opaque transaction ID, 'invalid_tx' on failure
  **/
-tx_t tm_begin(shared_t shared as(unused), bool is_ro as(unused)) noexcept {
-  // TODO: tm_begin(shared_t)
-  return invalid_tx;
+tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
+  return opaque(new Transaction(transparent(shared)->begin_tx(is_ro)));
 }
 
 /** [thread-safe] End the given transaction.
@@ -127,9 +127,12 @@ tx_t tm_begin(shared_t shared as(unused), bool is_ro as(unused)) noexcept {
  * @param tx     Transaction to end
  * @return Whether the whole transaction committed
  **/
-bool tm_end(shared_t shared as(unused), tx_t tx as(unused)) noexcept {
-  // TODO: tm_end(shared_t, tx_t)
-  return false;
+bool tm_end(shared_t shared, tx_t tx) noexcept {
+  std::cout << "Committing tx ";
+  bool success = transparent(shared)->end_tx(*transparent(tx));
+  std::cout << (success ? "succeeded" : "failed") << '\n';
+  delete transparent(tx);
+  return success;
 }
 
 /** [thread-safe] Read operation in the given transaction, source in the shared
@@ -142,11 +145,25 @@ bool tm_end(shared_t shared as(unused), tx_t tx as(unused)) noexcept {
  * @param target Target start address (in a private region)
  * @return Whether the whole transaction can continue
  **/
-bool tm_read(shared_t shared as(unused), tx_t tx as(unused),
-             void const* source as(unused), size_t size as(unused),
-             void* target as(unused)) noexcept {
-  // TODO: tm_read(shared_t, tx_t, void const*, size_t, void*)
-  return false;
+bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size,
+             void* target) noexcept {
+  auto* tm = transparent(shared);
+  auto* dest = reinterpret_cast<char*>(target);
+
+  auto start = reinterpret_cast<std::size_t>(source);
+  std::size_t offset = 0;
+  auto align = tm->alignment();
+  // std::cout << "Reading :: size=" << size << ", start=" << start
+  //          << ", align=" << align << '\n';
+  while (offset < size) {
+    if (tm->read_word(*transparent(tx), start + offset, dest + offset) ==
+        false) {
+      delete transparent(tx);
+      return false;
+    }
+    offset += align;
+  }
+  return true;
 }
 
 /** [thread-safe] Write operation in the given transaction, source in a private
@@ -159,11 +176,27 @@ bool tm_read(shared_t shared as(unused), tx_t tx as(unused),
  * @param target Target start address (in the shared region)
  * @return Whether the whole transaction can continue
  **/
-bool tm_write(shared_t shared as(unused), tx_t tx as(unused),
-              void const* source as(unused), size_t size as(unused),
-              void* target as(unused)) noexcept {
-  // TODO: tm_write(shared_t, tx_t, void const*, size_t, void*)
-  return false;
+bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size,
+              void* target) noexcept {
+  auto* tm = transparent(shared);
+  const auto* src = reinterpret_cast<const char*>(source);
+
+  auto start = reinterpret_cast<std::size_t>(target);
+
+  std::size_t offset = 0;
+  auto align = tm->alignment();
+
+  // std::cout << "Writing :: size=" << size << ", start=" << start
+  //          << ", align=" << align << '\n';
+  while (offset < size) {
+    if (tm->write_word(*transparent(tx), src + offset, start + offset) ==
+        false) {
+      delete transparent(tx);
+      return false;
+    }
+    offset += align;
+  }
+  return true;
 }
 
 /** [thread-safe] Memory allocation in the given transaction.
@@ -176,10 +209,11 @@ bool tm_write(shared_t shared as(unused), tx_t tx as(unused),
  * @return Whether the whole transaction can continue (success/nomem), or not
  *(abort_alloc)
  **/
-Alloc tm_alloc(shared_t shared as(unused), tx_t tx as(unused),
-               size_t size as(unused), void** target as(unused)) noexcept {
-  // TODO: tm_alloc(shared_t, tx_t, size_t, void**)
-  return Alloc::abort;
+Alloc tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) noexcept {
+  std::cout << "Alloc'ing to tx\n";
+  *target = reinterpret_cast<void*>(
+      transparent(shared)->allocate(*transparent(tx), size));
+  return Alloc::success;
 }
 
 /** [thread-safe] Memory freeing in the given transaction.
@@ -189,8 +223,9 @@ Alloc tm_alloc(shared_t shared as(unused), tx_t tx as(unused),
  *to deallocate
  * @return Whether the whole transaction can continue
  **/
-bool tm_free(shared_t shared as(unused), tx_t tx as(unused),
-             void* target as(unused)) noexcept {
-  // TODO: tm_free(shared_t, tx_t, void*)
-  return false;
+bool tm_free(shared_t shared, tx_t tx, void* target) noexcept {
+  std::cout << "Free'ing to tx\n";
+  auto id = reinterpret_cast<std::size_t>(target);
+  transparent(shared)->free(*transparent(tx), id);
+  return true;
 }
