@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <iostream>
 #include <memory>
 
 #include "versioned-lock.hpp"
@@ -37,12 +38,12 @@ struct ObjectId {
   std::size_t offset : 55;
 };
 
-inline ObjectId& operator+=(ObjectId& id, std::size_t offset) {
+inline ObjectId& operator+=(ObjectId& id, std::size_t offset) noexcept {
   id.offset += offset;
   return id;
 }
 
-inline ObjectId operator+(ObjectId id, std::size_t offset) {
+inline ObjectId operator+(ObjectId id, std::size_t offset) noexcept {
   return id += offset;
 }
 
@@ -53,7 +54,7 @@ inline std::size_t opaque(ObjectId id) {
   return (std::size_t(id.segment) << 56) | (1ul << 55) | id.offset;
 }
 
-inline ObjectId to_object_id(const void* id) {
+inline ObjectId to_object_id(const void* id) noexcept {
   static constexpr std::size_t OFFSET_MASK = (1ul << 55) - 1;
   static constexpr std::size_t SEGMENT_MASK = (1ul << 8) - 1;
 
@@ -67,7 +68,7 @@ inline ObjectId to_object_id(const void* id) {
   return ObjectId{segment, 1, offset};
 }
 
-inline bool operator==(const ObjectId& a, const ObjectId& b) {
+inline bool operator==(const ObjectId& a, const ObjectId& b) noexcept {
   return a.segment == b.segment && a.offset == b.offset;
 }
 
@@ -95,7 +96,7 @@ public:
       auto version = objects[i].latest.load();
       delete version;
     }
-    objects.release();
+    objects.reset();
     num_objects = 0;
     should_delete.clear();
   }

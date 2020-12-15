@@ -27,7 +27,6 @@
 #include <cstring>
 #include <iostream>
 #include <random>
-#include <unistd.h>
 #include <variant>
 
 // Internal headers
@@ -324,7 +323,6 @@ int main(int argc, char** argv) {
     auto const clk_res = Chrono::get_resolution();
     auto const slow_factor = 8ul;
     // Print run parameters
-    std::cout << getpid() << '\n';
     ::std::cout << "⎧ #worker threads:     " << nbworkers << ::std::endl;
     ::std::cout << "⎪ #TX per worker:      " << nbtxperwrk << ::std::endl;
     ::std::cout << "⎪ #repetitions:        " << nbrepeats << ::std::endl;

@@ -95,10 +95,7 @@ void tm_destroy(shared_t shared) noexcept { delete transparent(shared); }
  **/
 void* tm_start(shared_t shared) noexcept {
   auto addr = transparent(shared)->start_addr();
-  std::cout << "Start addr=" << +addr.segment << ' ' << addr.offset << '\n';
-  auto ret = reinterpret_cast<void*>(opaque(addr));
-  std::cout << "As ptr=" << ret << '\n';
-  return ret;
+  return reinterpret_cast<void*>(opaque(addr));
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of

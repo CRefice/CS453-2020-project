@@ -319,14 +319,12 @@ public:
           AccountSegment segment{tx, tm.get_start()};
           return segment.accounts[0] == init_balance;
         });
-    std::cout << "Finished init\n";
     if (unlikely(!correct))
       return "Violated consistency (check that committed writes in shared "
              "memory get visible to the following transactions' reads)";
     return nullptr;
   }
   virtual char const* run(Uid uid [[gnu::unused]], Seed seed) const {
-    std::cout << "Running\n";
     ::std::minstd_rand engine{seed};
     ::std::bernoulli_distribution long_dist{prob_long};
     ::std::bernoulli_distribution alloc_dist{prob_alloc};
@@ -352,7 +350,6 @@ public:
     return nullptr;
   }
   virtual char const* check(Uid uid, Seed seed [[gnu::unused]]) const {
-    std::cout << "Checking\n";
     constexpr size_t nbtxperwrk = 100;
     barrier.sync();
     if (uid == 0) { // Initialization

@@ -14,6 +14,14 @@ public:
   SharedMemory(std::size_t size, std::size_t align) noexcept
       : align(align), allocator(size, align) {}
 
+  ~SharedMemory() noexcept;
+
+  SharedMemory(SharedMemory&&) = delete;
+  SharedMemory& operator=(SharedMemory&&) = delete;
+
+  SharedMemory(const SharedMemory&) = delete;
+  SharedMemory& operator=(const SharedMemory&) = delete;
+
   [[nodiscard]] Transaction begin_tx(bool is_ro) noexcept;
   bool end_tx(Transaction& tx) noexcept;
 

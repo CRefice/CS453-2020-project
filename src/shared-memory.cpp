@@ -11,6 +11,8 @@ static std::unique_ptr<char[]> clone(const char* word, std::size_t align) {
   return copy;
 }
 
+SharedMemory::~SharedMemory() noexcept { unref(current.load()); }
+
 Transaction SharedMemory::begin_tx(bool is_ro) noexcept {
   Transaction tx;
   tx.is_ro = is_ro;

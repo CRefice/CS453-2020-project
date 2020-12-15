@@ -137,7 +137,7 @@ public:
     /** Unloader destructor.
     **/
     ~TransactionalLibrary() noexcept {
-        ::dlclose(module); // Close loaded module
+        //::dlclose(module); // Close loaded module
     }
 };
 

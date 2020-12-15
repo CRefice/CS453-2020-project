@@ -44,7 +44,7 @@ import socket
 version_uid = b"\x00\x00\x00\x02" # Unique version identifier (must be identical in compatible server)
 
 default_host = "lpdxeon2680.epfl.ch" # Default server hostname or IPv4
-default_port = 9997                  # Default server TCP port
+default_port = 9997                  # Default server TCP port
 
 max_codesize = 100000 # Max code size (in bytes) before AND after deflate (the same as in the server); modifying this value won't change the behavior of the server ;)
 
@@ -152,7 +152,7 @@ def socket_sendfield(fd, data):
     fd   Socket file descriptor to write
     data Data bytes to send
   """
-  if fd.send(socket_encode_size(len(data))) != 4 or fd.send(data) != len(data):
+  if fd.sendall(socket_encode_size(len(data))) is not None or fd.sendall(data) is not None:
     raise IOError("Send failed")
 
 # ---------------------------------------------------------------------------- #

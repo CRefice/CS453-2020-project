@@ -22,7 +22,7 @@ CXX      := $(CXX)
 CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
-LDLIBS   := -ldl -lpthread
+LDLIBS   := -lasan -ldl -lpthread
 
 LIB_DIRS := $(filter-out ../include/ ../grading/ ../playground/ ../template/,$(filter-out $(wildcard ../*),$(wildcard ../*/)))
 LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))
@@ -40,6 +40,8 @@ run: $(BIN)
 	$(BIN) 453 ../reference.so $(LIB_SOS)
 debug: $(BIN)
 	gdb --args $(BIN) 453 ../reference.so $(LIB_SOS)
+check-leaks: $(BIN)
+	valgrind $(BIN) 453 ../reference.so $(LIB_SOS)
 
 define BUILD_C
 %.$(1).o: %.$(1) $$(HDRS_C) Makefile
