@@ -31,17 +31,79 @@ struct Object {
   std::atomic<ObjectVersion*> latest{nullptr};
 };
 
+struct ObjectId {
+  std::uint8_t segment : 8;
+  std::size_t unused : 1;
+  std::size_t offset : 55;
+};
+
+inline ObjectId& operator+=(ObjectId& id, std::size_t offset) {
+  id.offset += offset;
+  return id;
+}
+
+inline ObjectId operator+(ObjectId id, std::size_t offset) {
+  return id += offset;
+}
+
+inline std::size_t opaque(ObjectId id) {
+  static_assert(sizeof(ObjectId) == sizeof(void*),
+                "Size of ObjectId does not match size of void*");
+
+  return (std::size_t(id.segment) << 56) | (1ul << 55) | id.offset;
+}
+
+inline ObjectId to_object_id(const void* id) {
+  static constexpr std::size_t OFFSET_MASK = (1ul << 55) - 1;
+  static constexpr std::size_t SEGMENT_MASK = (1ul << 8) - 1;
+
+  static_assert(sizeof(ObjectId) == sizeof(void*),
+                "Size of ObjectId does not match size of void*");
+
+  auto bytes = reinterpret_cast<std::size_t>(id);
+  std::size_t offset = bytes & OFFSET_MASK;
+  std::uint8_t segment = (bytes >> 56) & SEGMENT_MASK;
+
+  return ObjectId{segment, 1, offset};
+}
+
+inline bool operator==(const ObjectId& a, const ObjectId& b) {
+  return a.segment == b.segment && a.offset == b.offset;
+}
+
 class SharedSegment {
 public:
-  // Compare the shared segment to nullptr to check if the allocation
-  // succeeded after construction (this class does not throw exceptions)
-  SharedSegment(std::size_t size, std::size_t align)
-      : sz(size), objects(new Object[sz]) {
-    for (auto i = 0ul; i < (size / align); ++i) {
+  SharedSegment() = default;
+
+  SharedSegment(const SharedSegment&) = delete;
+  SharedSegment& operator=(const SharedSegment&) = delete;
+
+  ~SharedSegment() { deallocate(); }
+
+  void allocate(std::size_t size, std::size_t algn) {
+    align = algn;
+    num_objects = size / align;
+    objects = std::make_unique<Object[]>(num_objects);
+    for (auto i = 0ul; i < num_objects; ++i) {
       objects[i].latest.store(new ObjectVersion(align),
                               std::memory_order_relaxed);
     }
   }
+
+  void deallocate() {
+    for (auto i = 0ul; i < num_objects; ++i) {
+      auto version = objects[i].latest.load();
+      delete version;
+    }
+    objects.release();
+    num_objects = 0;
+    should_delete.clear();
+  }
+
+  // Returns true if marking succeeded
+  bool mark_for_deletion() { return !should_delete.test_and_set(); }
+
+  void cancel_deletion() { return should_delete.clear(); }
 
   [[nodiscard]] Object& operator[](std::size_t idx) noexcept {
     return objects[idx];
@@ -51,9 +113,12 @@ public:
     return objects[idx];
   }
 
-  [[nodiscard]] std::size_t size() const noexcept { return sz; }
+  [[nodiscard]] std::size_t size_bytes() const noexcept {
+    return num_objects * align;
+  }
 
 private:
-  std::size_t sz;
-  std::unique_ptr<Object[]> objects;
+  std::atomic_flag should_delete = ATOMIC_FLAG_INIT;
+  std::size_t num_objects = 0, align = 1;
+  std::unique_ptr<Object[]> objects = nullptr;
 };

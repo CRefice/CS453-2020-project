@@ -1,35 +1,33 @@
 #pragma once
 
-#include <shared_mutex>
+#include <array>
+#include <iostream>
+#include <mutex>
 #include <vector>
 
 #include "shared-segment.hpp"
 
 class SegmentAllocator {
 public:
-  SegmentAllocator(std::size_t obj_size) : obj_size(obj_size) {}
+  SegmentAllocator(std::size_t size, std::size_t align);
 
-  std::size_t allocate(std::size_t size);
-  void free(std::size_t addr);
+  bool allocate(std::size_t size, ObjectId* addr);
+  void free(ObjectId addr);
 
-  Object* find(std::size_t addr);
+  Object& find(ObjectId addr);
+  SharedSegment& find_segment(ObjectId addr);
 
   const SharedSegment& first_segment() const noexcept {
-    return allocated[0].segm;
+    return all_segments[0];
   }
 
-  std::size_t first_addr() const noexcept { return 1; }
+  ObjectId first_addr() const noexcept { return ObjectId{0, 1, 0}; }
 
 private:
-  struct AllocatedSegment {
-    std::size_t id;
-    SharedSegment segm;
-  };
+  static constexpr std::uint8_t MAX_SEGMENTS = 255;
+  std::size_t align, shift_offset = 0;
 
-  AllocatedSegment* find_segment(std::size_t addr);
-
-  std::shared_mutex mutex;
-  std::vector<AllocatedSegment> allocated;
-  std::size_t next_id = 1;
-  std::size_t obj_size;
+  std::mutex mutex;
+  std::unique_ptr<SharedSegment[]> all_segments;
+  std::vector<std::uint8_t> available;
 };

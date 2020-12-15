@@ -94,7 +94,11 @@ void tm_destroy(shared_t shared) noexcept { delete transparent(shared); }
  * @return Start address of the first allocated segment
  **/
 void* tm_start(shared_t shared) noexcept {
-  return reinterpret_cast<void*>(transparent(shared)->start_addr());
+  auto addr = transparent(shared)->start_addr();
+  std::cout << "Start addr=" << +addr.segment << ' ' << addr.offset << '\n';
+  auto ret = reinterpret_cast<void*>(opaque(addr));
+  std::cout << "As ptr=" << ret << '\n';
+  return ret;
 }
 
 /** [thread-safe] Return the size (in bytes) of the first allocated segment of
@@ -102,7 +106,10 @@ void* tm_start(shared_t shared) noexcept {
  * @param shared Shared memory region to query
  * @return First allocated segment size
  **/
-size_t tm_size(shared_t shared) noexcept { return transparent(shared)->size(); }
+size_t tm_size(shared_t shared) noexcept {
+  auto ret = transparent(shared)->size();
+  return ret;
+}
 
 /** [thread-safe] Return the alignment (in bytes) of the memory accesses on the
  *given shared memory region.
@@ -119,6 +126,8 @@ size_t tm_align(shared_t shared) noexcept {
  * @return Opaque transaction ID, 'invalid_tx' on failure
  **/
 tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
+  // std::cout << "Starting new " << (is_ro ? "readonly" : "writable") << "
+  // tx\n";
   return opaque(new Transaction(transparent(shared)->begin_tx(is_ro)));
 }
 
@@ -128,9 +137,9 @@ tx_t tm_begin(shared_t shared, bool is_ro) noexcept {
  * @return Whether the whole transaction committed
  **/
 bool tm_end(shared_t shared, tx_t tx) noexcept {
-  std::cout << "Committing tx ";
+  // std::cout << "Committing tx ";
   bool success = transparent(shared)->end_tx(*transparent(tx));
-  std::cout << (success ? "succeeded" : "failed") << '\n';
+  // std::cout << (success ? "succeeded" : "failed") << '\n';
   delete transparent(tx);
   return success;
 }
@@ -150,11 +159,12 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size,
   auto* tm = transparent(shared);
   auto* dest = reinterpret_cast<char*>(target);
 
-  auto start = reinterpret_cast<std::size_t>(source);
+  auto start = to_object_id(source);
   std::size_t offset = 0;
   auto align = tm->alignment();
-  // std::cout << "Reading :: size=" << size << ", start=" << start
-  //          << ", align=" << align << '\n';
+  // std::cout << "Original source ptr=" << source << '\n';
+  // std::cout << "Reading :: size=" << size << ", start=" << start.offset
+  //          << ", segment=" << +start.segment << ", align=" << align << '\n';
   while (offset < size) {
     if (tm->read_word(*transparent(tx), start + offset, dest + offset) ==
         false) {
@@ -181,13 +191,14 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size,
   auto* tm = transparent(shared);
   const auto* src = reinterpret_cast<const char*>(source);
 
-  auto start = reinterpret_cast<std::size_t>(target);
+  auto start = to_object_id(target);
 
   std::size_t offset = 0;
   auto align = tm->alignment();
 
-  // std::cout << "Writing :: size=" << size << ", start=" << start
-  //          << ", align=" << align << '\n';
+  // std::cout << "Original target ptr=" << target << '\n';
+  // std::cout << "Writing :: size=" << size << ", start=" << start.offset
+  //           << ", segment=" << +start.segment << ", align=" << align << '\n';
   while (offset < size) {
     if (tm->write_word(*transparent(tx), src + offset, start + offset) ==
         false) {
@@ -210,10 +221,14 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size,
  *(abort_alloc)
  **/
 Alloc tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) noexcept {
-  std::cout << "Alloc'ing to tx\n";
-  *target = reinterpret_cast<void*>(
-      transparent(shared)->allocate(*transparent(tx), size));
-  return Alloc::success;
+  // std::cout << "Alloc'ing to tx\n";
+  ObjectId addr;
+  bool success = transparent(shared)->allocate(*transparent(tx), size, &addr);
+  // std::cout << "Allocation " << (success ? "succeeded" : "failed") << '\n';
+  if (success) {
+    *target = reinterpret_cast<void*>(opaque(addr));
+  }
+  return success ? Alloc::success : Alloc::nomem;
 }
 
 /** [thread-safe] Memory freeing in the given transaction.
@@ -224,8 +239,8 @@ Alloc tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) noexcept {
  * @return Whether the whole transaction can continue
  **/
 bool tm_free(shared_t shared, tx_t tx, void* target) noexcept {
-  std::cout << "Free'ing to tx\n";
-  auto id = reinterpret_cast<std::size_t>(target);
+  // std::cout << "Free'ing to tx\n";
+  auto id = to_object_id(target);
   transparent(shared)->free(*transparent(tx), id);
   return true;
 }
